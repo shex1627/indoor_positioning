@@ -1,0 +1,305 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r library}
+library(tidyverse)
+library(plotly)
+```
+
+
+```{r import_data}
+load("wireless.rda")
+```
+
+```{r seeing_places}
+plot(x=wireless$x, y=wireless$y)
+points(x=AP$x,y=AP$y, col="red", cex=1)
+```
+
+```{r}
+# exploring relationship between distance and signal strength
+# without the loss of generality, use X
+ap1 = as.numeric(AP[1,])
+distances = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - ap1)^2))})
+
+par(mfrow=c(2,2))
+plot(y=(distances[distances < cutoff])^2, x=-wireless$S1[distances < cutoff])
+
+plot(x=log(-wireless$S1[distances < cutoff]), y=2*log(distances[distances < cutoff]))
+
+plot(y=distances[distances < cutoff], x=-wireless$S1[distances < cutoff])
+
+plot(x=log(-wireless$S1[distances < cutoff]), y=log(distances[distances < cutoff]))
+```
+
+
+```{r}
+mod = lm(wireless$S2~log(distances2))
+summary(mod)
+```
+
+TODO:
+try to do that for S2, S3... as well
+
+```{r}
+# exploring relationship between distance and signal strength
+# without the loss of generality, use X
+ap2 = as.numeric(AP[2,])
+distances2 = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - ap2)^2))})
+
+par(mfrow=c(2,2))
+plot(y=(distances2[distances2 < cutoff])^2, x=-wireless$S2[distances2 < cutoff])
+
+plot(x=log(-wireless$S2[distances2 < cutoff]), y=2*log(distances2[distances2 < cutoff]))
+
+plot(y=distances2[distances2 < cutoff], x=-wireless$S2[distances2 < cutoff])
+
+plot(x=log(-wireless$S2[distances2 < cutoff]), y=log(distances2[distances2 < cutoff]))
+```
+
+```{r}
+plot(x=(distances2)[distances2 < cutoff], y=-wireless$S2[distances2 < cutoff])
+#for distance above 100, the linear relationship between signal and distance breaks
+#lots of points have -92 the worse signal ever 
+```
+
+```{r}
+mod2 = lm(wireless$S2[distances2 < cutoff]~distances2[distances2 < cutoff])
+mod1 = lm(wireless$S1[distances < cutoff]~distances[distances < cutoff])
+
+dx = (wireless[knn_predictions[223],4] -wireless[223,4])/mod$coefficients[2] * 
+  (wireless[223,4]-mod$coefficients[1])/mod$coefficients[2] /
+  (wireless[knn_predictions[223],1]-AP$x[2])
+
+dy = (wireless[knn_predictions[223],4] -wireless[223,4])/mod$coefficients[2] * 
+  (wireless[223,4]-mod$coefficients[1])/mod$coefficients[2] /
+  (wireless[knn_predictions[223],2]-AP$y[2])
+```
+
+```{r}
+A = mod1$coefficients[2]^2 *
+  rbind((wireless[224,1:2] - AP[1,])/(wireless[224, 3] - -mod2$coefficients[1]),
+      (wireless[224,1:2] - AP[2,])/(wireless[224, 4] - -mod2$coefficients[1]))
+
+b = wireless[224, 3:4] - wireless[223, 3:4]
+
+solve(A, b)
+
+
+```
+
+
+```{r}
+k = mod2$coefficients[2]
+b = mod2$coefficients[1]
+
+signals = wireless_feature[224,]
+
+test = t(apply(AP, 1, function(x) {as.numeric(wireless[224,1:2]) - x}))
+
+test2 = apply(test, 2, function(x) as.numeric(k^2/(signals - b)) * x)
+
+df_mod = lm(as.numeric(wireless_feature[223,] - wireless_feature[224,])~0 + 
+                         test2[,1] + test2[,2])
+
+summary(df_mod)
+```
+
+
+```{r}
+##exploring using differentials 
+##
+
+sample_index = sample(1:nrow(wireless), 1)
+sample_point = wireless[sample_index,]
+sample_diff = data.frame(t(apply(wireless[-sample_index,], 1, function(x) x - as.numeric(wireless[sample_index,]))))
+sample_diff_y = sample_diff[sample_diff$y == 0,]
+
+mod = lm(x~.-y, data=sample_diff_y)
+summary(mod)
+```
+
+```{r}
+basic_x = lm(x~.-y, data=wireless)
+basic_y = lm(y~.-x, data=wireless)
+
+#summary(basic_x)
+#summary(basic_y)
+
+avg_error = mean(sqrt((wireless$x - basic_x$fitted.values)^2 + (wireless$y - basic_y$fitted.values)^2))
+avg_error
+```
+
+```{r basic_prediction}
+plot(wireless$x, wireless$y)
+points(basic_x$fitted.values, basic_y$fitted.values, col="red")
+segments(wireless$x, wireless$y, basic_x$fitted.values, basic_y$fitted.values, col="blue")
+```
+
+```{r basic_knn}
+n = nrow(wireless)
+#train_percent = 0.6
+#sample_indices = sample(1:nrow(wireless), train_percent*n)
+knn_predictions = numeric(n)
+
+wireless_feature = wireless[,3:7]
+pwdistances = as.matrix(dist(wireless_feature))
+
+for (i in 1:n) {
+  knn_predictions[i] = (1:n)[-i][which.min(as.matrix(pdist::pdist(wireless_feature[i,], wireless_feature[-i,])))]
+}
+```
+
+```{r}
+knn_x = wireless$x[knn_predictions]
+knn_y = wireless$y[knn_predictions]
+
+knn_avg_error = mean(sqrt((wireless$x - knn_x)^2 + (wireless$y - knn_y)^2))
+knn_avg_error
+
+par(mfrow=c(1,2))
+plot(density(sqrt((wireless$x - knn_x)^2 + (wireless$y - knn_y)^2)),
+     main = "knn performance")
+plot(density(sqrt((wireless$x - basic_x$fitted.values)^2 + (wireless$y - basic_y$fitted.values)^2)),
+     main = "regression performance")
+
+knn_errors = sqrt((wireless$x - knn_x)^2 + (wireless$y - knn_y)^2)
+```
+
+
+```{r}
+plot(wireless$x, wireless$y)
+points(knn_x, knn_y, col="red")
+segments(wireless$x, wireless$y, knn_x, knn_y, col="blue")
+```
+
+```{r exploring_differential}
+dtable = wireless[knn_predictions,] - wireless
+colnames(dtable) = paste0("d", colnames(wireless))
+
+# doesn't work out, I use the traditional way
+dx_mod = lm(dx~.-dy, data=dtable)
+dy_mod = lm(dy~.-dx, data=dtable)
+```
+
+```{r}
+num_iter = 1000
+coef_x = matrix(-1, nrow=num_iter, ncol=5)
+coef_y = matrix(-1, nrow=num_iter, ncol=5)
+singularities = 0
+for (i in 1:num_iter) {
+  Error = TRUE
+  while (Error) {
+    tryCatch(
+      {
+        sample_indices = sample(1:n,5)
+        temp_A = wireless_feature[sample_indices,]
+        temp_bx = wireless$x[sample_indices]
+        temp_by = wireless$y[sample_indices]
+        temp_x = solve(temp_A, temp_bx)
+        temp_y = solve(temp_A, temp_by)
+      Error = FALSE
+      },
+      error=function(cond) {
+      }
+    )}
+  coef_x[i,] = temp_x 
+  coef_y[i,] = temp_y 
+}
+
+dx = c(
+  mean(coef_x[,1][abs(coef_x[,1]) < 20]),
+  mean(coef_x[,2][abs(coef_x[,2]) < 20]),
+  mean(coef_x[,2][abs(coef_x[,3]) < 20]),
+  mean(coef_x[,2][abs(coef_x[,4]) < 20]),
+  mean(coef_x[,2][abs(coef_x[,5]) < 20])
+)
+
+dy = c(
+  mean(coef_y[,1][abs(coef_y[,1]) < 20]),
+  mean(coef_y[,2][abs(coef_y[,2]) < 20]),
+  mean(coef_y[,2][abs(coef_y[,3]) < 20]),
+  mean(coef_y[,2][abs(coef_y[,4]) < 20]),
+  mean(coef_y[,2][abs(coef_y[,5]) < 20])
+)
+```
+
+```{r}
+df_x = as.numeric(apply(dtable[,3:7], 1, function(x) {sum(x * dx)}))
+df_y = as.numeric(apply(dtable[,3:7], 1, function(x) {sum(x * dy)}))
+
+df_error = sqrt((knn_x-df_x - wireless$x)^2 + (knn_y-df_y - wireless$y)^2)
+df_avg_error = mean(df_error)
+
+df_avg_error
+```
+
+```{r}
+set.seed(12345)
+sample_indices = sample(1:254, 50)
+plot(wireless$x[sample_indices], wireless$y[sample_indices], ylim=c(0, 145), xlim=c(10, 235))
+points(knn_x[sample_indices], knn_y[sample_indices], col="yellow")
+points((knn_x-df_x)[sample_indices], (knn_y-df_y)[sample_indices], col="red")
+
+segments(wireless$x[sample_indices], wireless$y[sample_indices], knn_x[sample_indices], knn_y[sample_indices], col="blue")
+segments(knn_x[sample_indices], knn_y[sample_indices], (knn_x-df_x)[sample_indices], (knn_y-df_y)[sample_indices], col="green")
+#segments(wireless$x, wireless$y, knn_x+df_x, knn_y+ df_y, col="green")
+```
+
+
+
+```{r plotly}
+p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
+            mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
+  add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP))
+
+p
+```
+
+
+```{r}
+kclusters = kmeans(wireless[,3:7], 5)
+#kclusters$cluster
+
+ggplot(data=wireless) +
+  geom_point(aes(x=x,y=y), colour=kclusters$cluster) 
+```
+
+
+```{r}
+ggplot(data=wireless) +
+  geom_point(aes(x=x,y=y)) +
+  scale_fill_manual(kclusters$cluster)
+
+```
+
+
+```{r}
+cutoff = 68
+# seems like 70 is a good cut off lets check how many points have more than 70
+wireless_strong = wireless %>%
+  mutate(S1 = S1 > -cutoff) %>% 
+  mutate(S2 = S2 > -cutoff) %>% 
+  mutate(S3 = S3 > -cutoff) %>% 
+  mutate(S4 = S4 > -cutoff) %>% 
+  mutate(S5 = S5 > -cutoff) 
+
+# seems like 70 is not a good cutoff as we think
+table(apply(wireless_strong[,3:7], 1, sum))
+```
+
+```{r}
+bad_locations = wireless_strong[as.numeric(apply(wireless_strong[,3:7], 1, sum)) < 2,]
+
+plot(x=bad_locations$x, y=bad_locations$y, ylim=c(0,150), xlim=c(0,230))
+points(x=AP$x,y=AP$y, col="red", cex=5)
+```
+
+
+```{r}
+View(data.frame(table(wireless$y)))
+
+```
+
