@@ -11,6 +11,12 @@ library(plotly)
 
 ```{r import_data}
 load("wireless.rda")
+wireless_feature = wireless[,3:7] %>%
+  mutate(d1 = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - as.numeric(AP[1,]))^2))})) %>%
+  mutate(d2 = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - as.numeric(AP[2,]))^2))})) %>%
+  mutate(d3 = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - as.numeric(AP[3,]))^2))})) %>%
+  mutate(d4 = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - as.numeric(AP[4,]))^2))})) %>%
+  mutate(d5 = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - as.numeric(AP[5,]))^2))}))
 ```
 
 ```{r seeing_places}
@@ -49,15 +55,54 @@ try to do that for S2, S3... as well
 ap2 = as.numeric(AP[2,])
 distances2 = apply(wireless[,1:2], 1, function(x){sqrt(sum((x - ap2)^2))})
 
-par(mfrow=c(2,2))
-plot(y=(distances2[distances2 < cutoff])^2, x=-wireless$S2[distances2 < cutoff])
+par(mfrow=c(1,2))
 
-plot(x=log(-wireless$S2[distances2 < cutoff]), y=2*log(distances2[distances2 < cutoff]))
+plot(y=distances2, x=wireless$S2)
+plot(x=distances2, y=-wireless$S2)
 
-plot(y=distances2[distances2 < cutoff], x=-wireless$S2[distances2 < cutoff])
-
-plot(x=log(-wireless$S2[distances2 < cutoff]), y=log(distances2[distances2 < cutoff]))
+plot(y=distances, x=wireless$S1)
+plot(x=distances, y=-wireless$S1)
 ```
+
+```{r bag_init}
+cutoff = 100
+sample_size = 40
+num_iter = 1000
+```
+
+
+```{r bag1}
+k_s = numeric(num_iter)
+r_s = numeric(num_iter)
+
+for (i in 1:num_iter) {
+  temp_indices = sample((1:254)[distances < cutoff], sample_size)
+  temp_mod = lm(wireless_feature[temp_indices ,1]~distances[temp_indices])
+  k_s[i] = temp_mod$coefficients[2]
+  r_s[i] = summary(temp_mod)$adj.r.squared
+}
+
+mean(k_s)
+mean(r_s)
+```
+
+```{r bag2}
+# using bagging to find the coefficients, using 40 points 
+k_s = numeric(num_iter)
+for (i in 1:num_iter) {
+  temp_indices = sample((1:254)[distances2 < cutoff], sample_size)
+  temp_mod = lm(wireless_feature[temp_indices ,2]~distances2[temp_indices])
+  k_s[i] = temp_mod$coefficients[2]
+}
+
+mean(k_s)
+```
+
+```{r bag5}
+
+```
+
+
 
 ```{r}
 plot(x=(distances2)[distances2 < cutoff], y=-wireless$S2[distances2 < cutoff])
@@ -69,31 +114,27 @@ plot(x=(distances2)[distances2 < cutoff], y=-wireless$S2[distances2 < cutoff])
 mod2 = lm(wireless$S2[distances2 < cutoff]~distances2[distances2 < cutoff])
 mod1 = lm(wireless$S1[distances < cutoff]~distances[distances < cutoff])
 
-dx = (wireless[knn_predictions[223],4] -wireless[223,4])/mod$coefficients[2] * 
-  (wireless[223,4]-mod$coefficients[1])/mod$coefficients[2] /
-  (wireless[knn_predictions[223],1]-AP$x[2])
-
-dy = (wireless[knn_predictions[223],4] -wireless[223,4])/mod$coefficients[2] * 
-  (wireless[223,4]-mod$coefficients[1])/mod$coefficients[2] /
-  (wireless[knn_predictions[223],2]-AP$y[2])
+wireless[c(107, 86),]
 ```
 
 ```{r}
-A = mod1$coefficients[2]^2 *
-  rbind((wireless[224,1:2] - AP[1,])/(wireless[224, 3] - -mod2$coefficients[1]),
-      (wireless[224,1:2] - AP[2,])/(wireless[224, 4] - -mod2$coefficients[1]))
+k = -0.42
 
-b = wireless[224, 3:4] - wireless[223, 3:4]
+d = apply(AP, 1, function(x){sqrt(sum((x - wireless[107,1:2])^2))})
 
-solve(A, b)
+dxy = t(apply(AP, 1, function(x) {as.numeric(wireless[107,1:2]) - x}))
 
+ds.dxy = apply(dxy, 2, function(x) as.numeric(k * x / d))
 
+ds.dxy
+
+ds = wireless_feature[86,] - wireless_feature[107,] 
 ```
 
 
 ```{r}
-k = mod2$coefficients[2]
-b = mod2$coefficients[1]
+k = mod1$coefficients[2]
+b = mod1$coefficients[1]
 
 signals = wireless_feature[224,]
 
@@ -105,6 +146,19 @@ df_mod = lm(as.numeric(wireless_feature[223,] - wireless_feature[224,])~0 +
                          test2[,1] + test2[,2])
 
 summary(df_mod)
+
+
+```
+
+```{r}
+#12/31/2017 differential attents
+diff_12 = (wireless_feature$S1 - wireless_feature$S2)
+diff_32 = (wireless_feature$S4 - wireless_feature$S5)
+summary(lm(log(wireless_feature$d1/wireless_feature$d2)~0 + diff_12))
+
+summary(lm(log(wireless_feature$d4/wireless_feature$d5)~0 + diff_32))
+
+plot((wireless_feature$S1 - wireless_feature$S2), log(wireless_feature$d1/wireless_feature$d2))
 ```
 
 
@@ -144,28 +198,27 @@ n = nrow(wireless)
 #sample_indices = sample(1:nrow(wireless), train_percent*n)
 knn_predictions = numeric(n)
 
-wireless_feature = wireless[,3:7]
-pwdistances = as.matrix(dist(wireless_feature))
+pwdistances = as.matrix(dist(wireless[,3:7]))
 
 for (i in 1:n) {
-  knn_predictions[i] = (1:n)[-i][which.min(as.matrix(pdist::pdist(wireless_feature[i,], wireless_feature[-i,])))]
+  knn_predictions[i] = (1:n)[-i][which.min(as.matrix(pdist::pdist(1/wireless[,(3:7)][i,], 1/wireless[,(3:7)][-i,])))]
 }
 ```
+
 
 ```{r}
 knn_x = wireless$x[knn_predictions]
 knn_y = wireless$y[knn_predictions]
 
-knn_avg_error = mean(sqrt((wireless$x - knn_x)^2 + (wireless$y - knn_y)^2))
-knn_avg_error
-
 par(mfrow=c(1,2))
 plot(density(sqrt((wireless$x - knn_x)^2 + (wireless$y - knn_y)^2)),
      main = "knn performance")
-plot(density(sqrt((wireless$x - basic_x$fitted.values)^2 + (wireless$y - basic_y$fitted.values)^2)),
-     main = "regression performance")
+#plot(density(sqrt((wireless$x - basic_x$fitted.values)^2 + (wireless$y - basic_y$fitted.values)^2)),
+#     main = "regression performance")
 
 knn_errors = sqrt((wireless$x - knn_x)^2 + (wireless$y - knn_y)^2)
+knn_avg_error = mean(knn_errors[knn_errors < 100])
+knn_avg_error
 ```
 
 
@@ -175,66 +228,114 @@ points(knn_x, knn_y, col="red")
 segments(wireless$x, wireless$y, knn_x, knn_y, col="blue")
 ```
 
-```{r exploring_differential}
-dtable = wireless[knn_predictions,] - wireless
-colnames(dtable) = paste0("d", colnames(wireless))
-
-# doesn't work out, I use the traditional way
-dx_mod = lm(dx~.-dy, data=dtable)
-dy_mod = lm(dy~.-dx, data=dtable)
+```{r knn_error_analysis}
+knn_bad_loc = wireless[knn_errors > 20,] %>%
+  mutate(error = knn_errors[knn_errors > 20]) %>%
+  mutate(index = (1:254)[knn_errors > 20]) %>%
+  dplyr::arrange(desc(error))
 ```
 
 ```{r}
-num_iter = 1000
-coef_x = matrix(-1, nrow=num_iter, ncol=5)
-coef_y = matrix(-1, nrow=num_iter, ncol=5)
-singularities = 0
-for (i in 1:num_iter) {
-  Error = TRUE
-  while (Error) {
-    tryCatch(
-      {
-        sample_indices = sample(1:n,5)
-        temp_A = wireless_feature[sample_indices,]
-        temp_bx = wireless$x[sample_indices]
-        temp_by = wireless$y[sample_indices]
-        temp_x = solve(temp_A, temp_bx)
-        temp_y = solve(temp_A, temp_by)
-      Error = FALSE
-      },
-      error=function(cond) {
-      }
-    )}
-  coef_x[i,] = temp_x 
-  coef_y[i,] = temp_y 
+hover_text = apply(wireless_feature[,1:5],1, function(x) paste(x,collapse = "|"))
+p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
+            mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
+  add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP)) %>%
+  add_trace(x=wireless$x[knn_errors > 20], y=wireless$y[knn_errors > 20], name = "badloc", mode="markers", text=hover_text[knn_errors > 20]) 
+p
+```
+
+```{r}
+#trying nearest neightbor + trigulation
+point_index = 4
+point = wireless[point_index,3:7]
+point_d = pdist::pdist(point, wireless[-point_index,3:7])@dist
+top_three = (1:254)[-point_index][order(point_d)[1:3]]
+top_three
+```
+
+```{r visualizing}
+hover_text = apply(wireless_feature[,1:5],1, function(x) paste(x,collapse = "|"))
+p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
+            mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
+  add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP)) %>%
+  add_trace(x=wireless$x[top_three], y=wireless$y[top_three], 
+            name = "neighbors", mode="markers", 
+            text=paste(top_three, "<br>", hover_text[top_three])) %>%
+  add_trace(x=wireless$x[point_index], y=wireless$y[point_index], 
+            name = "neighbors", mode="markers", 
+            text=paste(point_index, "<br>", hover_text[point_index]))
+p
+```
+
+```{r}
+point_index = 113
+point = wireless[point_index,3:7]
+point_d = pdist::pdist(point, wireless[-point_index,(3:7)])@dist
+top_three = (1:254)[-point_index][order(point_d)[1:3]]
+
+
+neighbors = numeric(5)
+for (i in 1:5) {
+  neighbors[i] = (1:n)[-point_index][which.min(as.matrix(pdist::pdist(wireless[,(3:7)[-i]][point_index,], wireless[,(3:7)[-i]][-point_index,])))]
 }
 
-dx = c(
-  mean(coef_x[,1][abs(coef_x[,1]) < 20]),
-  mean(coef_x[,2][abs(coef_x[,2]) < 20]),
-  mean(coef_x[,2][abs(coef_x[,3]) < 20]),
-  mean(coef_x[,2][abs(coef_x[,4]) < 20]),
-  mean(coef_x[,2][abs(coef_x[,5]) < 20])
-)
+neighbors
+dist(wireless[neighbors,1:2])
+```
+5
+```{r}
+point
+```
 
-dy = c(
-  mean(coef_y[,1][abs(coef_y[,1]) < 20]),
-  mean(coef_y[,2][abs(coef_y[,2]) < 20]),
-  mean(coef_y[,2][abs(coef_y[,3]) < 20]),
-  mean(coef_y[,2][abs(coef_y[,4]) < 20]),
-  mean(coef_y[,2][abs(coef_y[,5]) < 20])
-)
+
+```{r}
+hover_text = apply(wireless_feature[,1:5],1, function(x) paste(x,collapse = "|"))
+p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
+            mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
+  add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP)) %>%
+  add_trace(x=wireless$x[neighbors], y=wireless$y[neighbors], 
+            name = "neighbors", mode="markers", 
+            text=paste(neighbors, "<br>", hover_text[neighbors])) #%>%
+  #add_trace(x=wireless$x[point_index], y=wireless$y[point_index], 
+  #          name = "point", mode="markers", 
+  #          text=paste(point_index, "<br>", hover_text[point_index]))
+  
+p
 ```
 
 ```{r}
-df_x = as.numeric(apply(dtable[,3:7], 1, function(x) {sum(x * dx)}))
-df_y = as.numeric(apply(dtable[,3:7], 1, function(x) {sum(x * dy)}))
-
-df_error = sqrt((knn_x-df_x - wireless$x)^2 + (knn_y-df_y - wireless$y)^2)
-df_avg_error = mean(df_error)
-
-df_avg_error
+hover_text = apply(wireless_feature[,1:5],1, function(x) paste(x,collapse = "|"))
+p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
+            mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
+  add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP)) %>%
+  add_trace(x=wireless$x[top_three], y=wireless$y[top_three], 
+            name = "neighbors", mode="markers", 
+            text=paste(top_three, "<br>", hover_text[top_three])) %>%
+  add_trace(x=wireless$x[point_index], y=wireless$y[point_index], 
+            name = "point", mode="markers", 
+            text=paste(point_index, "<br>", hover_text[point_index]))
+  
+p
 ```
+
+
+```{r}
+knn_predictions[3]
+```
+
+```{r}
+neighbors = numeric(5)
+for (i in 1:5) {
+  neighbors[i] = (1:n)[-point_index][which.min(as.matrix(pdist::pdist(1/wireless[,(3:7)[-i]][point_index,], 1/wireless[,(3:7)[-i]][-point_index,])))]
+}
+neighbors
+```
+
+
+after analyzing the error, I find that point 243's signal for AP3 is completely bad
+comparing to its neighbors, lets check other access points.
+
+Some points, they only f* up on signal from an access point. 
 
 ```{r}
 set.seed(12345)
@@ -249,8 +350,33 @@ segments(knn_x[sample_indices], knn_y[sample_indices], (knn_x-df_x)[sample_indic
 ```
 
 
+```{r signal_and_distances}
+par(mfrow=c(1,2))
+plot(wireless_feature$S1, wireless_feature$d1, main="ap1")
+plot(wireless_feature$S2, wireless_feature$d2, main="ap2")
+plot(wireless_feature$S3, wireless_feature$d3, main="ap3")
+plot(wireless_feature$S4, wireless_feature$d4, main="ap4")
+plot(wireless_feature$S5, wireless_feature$d5, main="ap5")
+# maybe normal method for signal < 70
+# modeling log distance when signal > 70 
+
+plot(y=wireless_feature$S1, wireless_feature$d1, main="ap1")
+plot(y=wireless_feature$S2, wireless_feature$d2, main="ap2")
+plot(y=wireless_feature$S3, wireless_feature$d3, main="ap3")
+plot(y=wireless_feature$S4, wireless_feature$d4, main="ap4")
+plot(y=wireless_feature$S5, wireless_feature$d5, main="ap5")
+```
+
+From the first half of the graph, we can see for different AP,
+the variance spikes at different points. 
+
+Looking at the second half of the graphs.  
+For access point 5, the relationship between distance and signal is very weak, while  
+others are more stable. This may have to do with AP5 is in the center of the building. 
+
 
 ```{r plotly}
+hover_text = apply(wireless_feature,1, function(x) paste(x,collapse = "|"))
 p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
             mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
   add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP))
