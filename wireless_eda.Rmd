@@ -98,10 +98,6 @@ for (i in 1:num_iter) {
 mean(k_s)
 ```
 
-```{r bag5}
-
-```
-
 
 
 ```{r}
@@ -201,7 +197,7 @@ knn_predictions = numeric(n)
 pwdistances = as.matrix(dist(wireless[,3:7]))
 
 for (i in 1:n) {
-  knn_predictions[i] = (1:n)[-i][which.min(as.matrix(pdist::pdist(1/wireless[,(3:7)][i,], 1/wireless[,(3:7)][-i,])))]
+  knn_predictions[i] = (1:n)[-i][which.min(as.matrix(pdist::pdist(wireless[,(3:7)][i,], wireless[,(3:7)][-i,])))]
 }
 ```
 
@@ -225,7 +221,7 @@ knn_avg_error
 ```{r}
 plot(wireless$x, wireless$y)
 points(knn_x, knn_y, col="red")
-segments(wireless$x, wireless$y, knn_x, knn_y, col="blue")
+arrows(wireless$x, wireless$y, knn_x, knn_y, col="blue", length = 0.1)
 ```
 
 ```{r knn_error_analysis}
@@ -236,17 +232,29 @@ knn_bad_loc = wireless[knn_errors > 20,] %>%
 ```
 
 ```{r}
-hover_text = apply(wireless_feature[,1:5],1, function(x) paste(x,collapse = "|"))
-p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
-            mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
-  add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP)) %>%
-  add_trace(x=wireless$x[knn_errors > 20], y=wireless$y[knn_errors > 20], name = "badloc", mode="markers", text=hover_text[knn_errors > 20]) 
-p
+error_bar = 15
+plot(wireless$x, wireless$y)
+points(knn_x[knn_errors > error_bar], knn_y[knn_errors > error_bar], col="red")
+arrows(wireless$x[knn_errors > error_bar], wireless$y[knn_errors > error_bar], knn_x[knn_errors > error_bar], knn_y[knn_errors > error_bar], col="blue", length = 0.1)
 ```
 
 ```{r}
+par(mfrow=c(1,2))
+hist(knn_errors)
+plot(density(knn_errors))
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+hist(wireless$x[knn_errors > error_bar])
+plot(density(wireless$x[knn_errors > error_bar]))
+```
+
+
+```{r}
 #trying nearest neightbor + trigulation
-point_index = 4
+point_index = 113
 point = wireless[point_index,3:7]
 point_d = pdist::pdist(point, wireless[-point_index,3:7])@dist
 top_three = (1:254)[-point_index][order(point_d)[1:3]]
@@ -303,20 +311,6 @@ p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter",
 p
 ```
 
-```{r}
-hover_text = apply(wireless_feature[,1:5],1, function(x) paste(x,collapse = "|"))
-p = plot_ly(wireless, x=~x, y=~y, name = "receivers", type="scatter", 
-            mode="markers", text=paste(1:254, "<br>", hover_text)) %>% 
-  add_trace(x=AP$x, y=AP$y, name = "wifi post", mode="markers", text=rownames(AP)) %>%
-  add_trace(x=wireless$x[top_three], y=wireless$y[top_three], 
-            name = "neighbors", mode="markers", 
-            text=paste(top_three, "<br>", hover_text[top_three])) %>%
-  add_trace(x=wireless$x[point_index], y=wireless$y[point_index], 
-            name = "point", mode="markers", 
-            text=paste(point_index, "<br>", hover_text[point_index]))
-  
-p
-```
 
 
 ```{r}
@@ -352,19 +346,21 @@ segments(knn_x[sample_indices], knn_y[sample_indices], (knn_x-df_x)[sample_indic
 
 ```{r signal_and_distances}
 par(mfrow=c(1,2))
-plot(wireless_feature$S1, wireless_feature$d1, main="ap1")
-plot(wireless_feature$S2, wireless_feature$d2, main="ap2")
-plot(wireless_feature$S3, wireless_feature$d3, main="ap3")
-plot(wireless_feature$S4, wireless_feature$d4, main="ap4")
-plot(wireless_feature$S5, wireless_feature$d5, main="ap5")
+plot(wireless_feature$S1, wireless_feature$d1, main="ap1 signal to distance")
+plot(wireless_feature$S2, wireless_feature$d2, main="ap2 signal to distance")
+plot(wireless_feature$S3, wireless_feature$d3, main="ap3 signal to distance")
+plot(wireless_feature$S4, wireless_feature$d4, main="ap4 signal to distance")
+plot(wireless_feature$S5, wireless_feature$d5, main="ap5 signal to distance")
 # maybe normal method for signal < 70
-# modeling log distance when signal > 70 
+# modeling xlog distance when signal > 70 
+plot.new()
 
-plot(y=wireless_feature$S1, wireless_feature$d1, main="ap1")
-plot(y=wireless_feature$S2, wireless_feature$d2, main="ap2")
-plot(y=wireless_feature$S3, wireless_feature$d3, main="ap3")
-plot(y=wireless_feature$S4, wireless_feature$d4, main="ap4")
-plot(y=wireless_feature$S5, wireless_feature$d5, main="ap5")
+plot(y=wireless_feature$S1, wireless_feature$d1, main="ap1 distance to signal")
+plot(y=wireless_feature$S2, wireless_feature$d2, main="ap2 distance to signal")
+plot(y=wireless_feature$S3, wireless_feature$d3, main="ap3 distance to signal")
+plot(y=wireless_feature$S4, wireless_feature$d4, main="ap4 distance to signal")
+plot(y=wireless_feature$S5, wireless_feature$d5, main="ap5 distance to signal")
+
 ```
 
 From the first half of the graph, we can see for different AP,
